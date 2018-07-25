@@ -19,6 +19,8 @@
 
 
 /* eslint-env worker */
+
+/* global Errors */
 importScripts("./Errors.js");
 
 
@@ -63,7 +65,7 @@ const TimingManager = (() => {
 		 * @return {any} 参照されたコマンド
 		 */
 		deepBrowse (schemeStr) {
-			if (!schemeStr) throw new TypeError("<'scheme' | 1st argment> is required");
+			if (!schemeStr) throw new Errors.ArgumentError.ArgumentNotDefinedError("schemeStr", 1);
 
 			const nests = schemeStr.split(".");
 
@@ -95,7 +97,7 @@ const TimingManager = (() => {
 
 	Object.defineProperties(TimingManager, {
 		instruments: { value: instruments, enumerable: true },
-		Commands: { value: Commands, enumerable: true }
+		Commands: { value: Commands }
 	});
 
 	TimingManager.instruments = instruments;
@@ -116,7 +118,7 @@ self.addEventListener("message", event => {
 	/** @type {CommandRequest} */
 	const data = event.data;
 
-	if (!data.command) throw new TypeError("'command' must be String");
+	if (!data.command) throw new Errors.ArgumentError.ArgumentNotAcceptableError("command", null, "String");
 	if (!TimingManager.Commands.deepBrowse(data.command)) throw new ReferenceError("Provided command doesn't exist");
 	if (!data.arguments) data.arguments = [];
 
