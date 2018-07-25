@@ -1,10 +1,24 @@
+/*/
+ *  ______   ______   ______   ______   ______   ______   ______   ______   ______   ______   ______ 
+ * |     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|      |
+ * | I  (_(_  n  (_(_  s  (_(_  t  (_(_  r  (_(_  u  (_(_  m  (_(_  e  (_(_  n_ (_(_  t_ (_(_  s_   |
+ * |______| |______| |______| |______| |______| |______| |______| |______| |_( )__| |_( )__| |_( )__|
+ *                                                                            _        _        _    
+ *                                                                          _( )__   _( )__   _( )__ 
+ *                                                                         |     _|_|     _|_|      |
+ *                                                                         | .  (_(_  j  (_(_  s    |
+ *                                                                         |______| |______| |______|
+/*/
+
+
+
 /**
  * Instruments.jsのルートクラス
  * 
  * @namespace
  * @author Genbu Hase
  */
-const Instruments = (() => {
+const Instruments = (libRoot => {
 	class Instruments {
 		/**
 		 * キーマッピングのデフォルト設定
@@ -34,6 +48,14 @@ const Instruments = (() => {
 		}
 	}
 
+	/**
+	 * 遅延処理に利用するタイマー
+	 * 
+	 * @type {Worker}
+	 * @memberof Instruments
+	 */
+	const TIMER = new Worker(`${libRoot}/TimingManager.js`);
+
 
 
 	/**
@@ -44,7 +66,12 @@ const Instruments = (() => {
 	 */
 	class Instrument extends AudioContext {
 		/** 楽器を生成します */
-		constructor () { super() }
+		constructor () {
+			super();
+			this.notesQue = [];
+
+			TIMER.postMessage({ command: "getNextId" });
+		}
 
 		/**
 		 * 楽器の波形タイプ
@@ -220,32 +247,28 @@ const Instruments = (() => {
 
 
 
-	/**
-	 * 遅延処理に利用するタイマー
-	 * @type {Worker}
-	 */
-	Instruments.TIMER = new Worker("./Timer.js");
-
 	Object.defineProperties(Instruments, {
-		Instrument: {
-			value: Instrument,
-			configurable: false, writable: false, enumerable: true
-		},
+		TIMER: { value: TIMER, enumerable: true },
 
-		Note: {
-			value: Note,
-			configurable: false, writable: false, enumerable: true
-		},
-
-		Chord: {
-			value: Chord,
-			configurable: false, writable: false, enumerable: true
-		}
+		Instrument: { value: Instrument },
+		Note: { value: Note },
+		Chord: { value: Chord }
 	});
 	
-	Instruments.Instrument = Instrument,
-	Instruments.Note = Note,
+	Instruments.TIMER = TIMER;
+
+	Instruments.Instrument = Instrument;
+	Instruments.Note = Note;
 	Instruments.Chord = Chord;
 
 	return Instruments;
-})();
+})(
+	(() => {
+		/** Instruments.jsのルートファイル名 */
+		const libMainFile = "Instruments.js";
+		/** @type {HTMLScriptElement} */
+		const script = document.querySelector(`Script[Src$="${libMainFile}"]`);
+		
+		return script.src.split("/").slice(0, -1).join("/");
+	})()
+);
