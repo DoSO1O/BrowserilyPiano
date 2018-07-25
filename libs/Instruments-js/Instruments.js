@@ -12,6 +12,10 @@
 
 
 
+/* global Errors */
+
+
+
 /**
  * Instruments.jsのルートクラス
  * 
@@ -48,119 +52,240 @@ const Instruments = (libRoot => {
 		}
 	}
 
+
+
 	/**
-	 * 遅延処理に利用するタイマー
-	 * 
-	 * @type {Worker}
-	 * @memberof Instruments
+	 * 直観的な操作を可能にしたWorker
+	 * @author Genbu Hase
 	 */
-	const TIMER = new Worker(`${libRoot}/TimingManager.js`);
+	class CommandWorker extends Worker {
+		/**
+		 * CommandWorkerを生成します
+		 * @param {String} stringUrl Workerとして起動するスクリプト
+		 */
+		constructor (stringUrl) {
+			super(stringUrl);
 
+			this.addEventListener("message", event => {
+				console.log(event);
+			});
+		}
 
+		/**
+		 * コマンドの実行を要求します
+		 * 
+		 * @param {String} command 実行するコマンド名
+		 * @param {Array<any>} [args=[]] コマンドの引数
+		 * 
+		 * @return {Promise<any>} 実行結果が格納されているPromiseオブジェクト
+		 */
+		requestCommand (command, args = []) {
+			if (!command) throw new Errors.ArgumentError.ArgumentNotDefinedError("request", 1);
+			
+			super.postMessage({ command, args });
 
+			return new Promise(resolve => {
+				/** @param {MessageEvent} event */
+				const detectorHook = event => {
+					/** @type {CommandWorker.CommandResponse} */
+					const resp = event.data;
+
+					if (resp.command === command) {
+						this.removeEventListener("message", detectorHook);
+						resolve(resp.result);
+					}
+				};
+
+				this.addEventListener("message", detectorHook);
+			});
+		}
+	}
+	
+	/**
+	 * @typedef {Object} CommandWorker.CommandResponse
+	 * @prop {String} command 実行されたコマンド名
+	 * @prop {any} result 実行結果
+	 */
+
+	
+	
 	/**
 	 * 演奏に使用する楽器クラス
 	 * 
 	 * @memberof Instruments
 	 * @author Genbu Hase
 	 */
-	class Instrument extends AudioContext {
-		/** 楽器を生成します */
-		constructor () {
-			super();
-			this.notesQue = [];
+	const Instrument = (() => {
+		class Instrument extends AudioContext {
+			/** 楽器を生成します */
+			constructor () {
+				super();
 
-			TIMER.postMessage({ command: "getNextId" });
-		}
+				/** @type {Boolean} */
+				this.initialized = false;
+				/** @type {NoteCollection} */
+				this.notesQue = new NoteCollection();
 
-		/**
-		 * 楽器の波形タイプ
-		 * @return {OscillatorType}
-		 */
-		get type () { return "sine" }
-
-		/** @param {Number} [frequency] */
-		createOscillator (frequency) {
-			const oscillator = super.createOscillator();
-			oscillator.type = this.type;
-			frequency && (oscillator.frequency.value = frequency);
-
-			return oscillator;
-		}
-		
-		/**
-		 * 音源を再生します
-		 * 
-		 * @param {Number | Note | Instruments.Chord} source 鍵盤番号 | 音符 | コード
-		 * @param {Number} [duration] 再生時間[ms]
-		 */
-		async play (source, duration) {
-			if (!(
-				typeof source === "number" ||
-				source instanceof Instruments.Note ||
-				source instanceof Instruments.Chord
-			)) throw new TypeError("1st argument, source is not acceptable");
-
-			if (source instanceof Instruments.Chord) {
-				const sounds = [];
-				for (const note of source.notes) {
-					const sound = this.createOscillator(note.frequency);
-					
-					sound.connect(this.destination);
-					sound.start(0);
-
-					sounds.push(
-						new Promise(resolve => {
-							if (!duration) resolve();
-
-							let counter = 0;
-							const detector = setInterval(() => {
-								counter++;
-
-								if (counter >= duration) {
-									sound.stop(0);
-
-									clearInterval(detector);
-									resolve();
-								}
-							});
-						})
-					);
-				}
-
-				await Promise.all(sounds);
-				return;
+				TIMER.requestCommand("Instruments.register", [ {} ]).then(id => {
+					this.id = id;
+					this.initialized = true;
+				});
 			}
 
+			/**
+			 * 楽器の波形タイプ
+			 * @return {OscillatorType}
+			 */
+			get type () { return "sine" }
 
-		
-			const sound = this.createOscillator(
-				typeof source === "number" ? Instruments.Note.createFromIndex(source).frequency :
-				source instanceof Instruments.Note ? source.frequency :
-				null
-			);
+			/**
+			 * イベントフックを登録します
+			 * 
+			 * @param {Instrument.EventType} eventName イベント名
+			 * @param {Function} [callback] コールバック関数
+			 * 
+			 * @return {Promise<any>}
+			 */
+			on (eventName, callback) {
+				switch (eventName) {
+					default:
+						throw new Errors.ArgumentError.ArgumentNotAcceptableError("eventName", 1);
 
-			sound.connect(this.destination);
-			sound.start(0);
+					case "initiaized":
+						return new Promise(resolve => {
+							const detector = setInterval(() => {
+								if (this.initialized) {
+									clearInterval(detector);
 
-			await new Promise(resolve => {
-				if (!duration) resolve();
+									callback && callback(this);
+									resolve(this);
+								}
+							});
+						});
+				}
+			}
 
-				let counter = 0;
-				const detector = setInterval(() => {
-					counter++;
-					if (counter < duration) return;
+			/** @param {Number} [frequency] */
+			createOscillator (frequency) {
+				const oscillator = super.createOscillator();
+				oscillator.type = this.type;
+				frequency && (oscillator.frequency.value = frequency);
 
-					sound.stop(0);
+				return oscillator;
+			}
+			
+			/**
+			 * 音源を再生します
+			 * 
+			 * @param {Number | Note | Instruments.Chord} source 鍵盤番号 | 音符 | コード
+			 * @param {Number} [duration] 再生時間[ms]
+			 */
+			async play (source, duration) {
+				if (!(
+					typeof source === "number" ||
+					source instanceof Instruments.Note ||
+					source instanceof Instruments.Chord
+				)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("source", 1, ["Number", "Note", "Chord"]);
 
-					clearInterval(detector);
-					resolve();
-				}, 1);
-			});
+				if (source instanceof Instruments.Chord) {
+					const sounds = [];
+					for (const note of source.notes) {
+						const sound = this.createOscillator(note.frequency);
+						
+						sound.connect(this.destination);
+						sound.start(0);
 
-			return;
+						sounds.push(
+							new Promise(resolve => {
+								if (!duration) resolve();
+
+								let counter = 0;
+								const detector = setInterval(() => {
+									counter++;
+
+									if (counter >= duration) {
+										sound.stop(0);
+
+										clearInterval(detector);
+										resolve();
+									}
+								});
+							})
+						);
+					}
+
+					await Promise.all(sounds);
+					return;
+				}
+
+
+			
+				const sound = this.createOscillator(
+					typeof source === "number" ? Instruments.Note.createFromIndex(source).frequency :
+					source instanceof Instruments.Note ? source.frequency :
+					null
+				);
+
+				sound.connect(this.destination);
+				sound.start(0);
+
+				(() => {
+					const nextId = this.notesQue.getNextId();
+					this.notesQue[nextId] = sound;
+
+					TIMER.requestCommand("Notes.stop", [ this.id, nextId, duration ]).then(noteInfo => {
+						if (noteInfo.instrumentId === this.id && noteInfo.noteId === nextId) {
+							this.notesQue[nextId].stop(0);
+							this.notesQue[nextId] = undefined;
+						}
+					});
+				})();
+
+				return;
+			}
 		}
-	}
+
+
+
+		/**
+		 * 実行中のNoteを格納するコレクション
+		 * @memberof Instrument
+		 */
+		class NoteCollection extends Array {
+			/**
+			 * NoteCollectionを生成します
+			 * @param {...Note} notes
+			 */
+			constructor (...notes) {
+				super(...notes);
+			}
+
+			/**
+			 * ノートIDの次の空き番地を返します
+			 * @return {Number} ノートID
+			 */
+			getNextId () {
+				const index = this.findIndex(note => !note);
+				return index < 0 ? this.length : index;
+			}
+		}
+
+
+
+		Object.defineProperties(Instrument, {
+			NoteCollection: { value: NoteCollection }
+		});
+
+		Instrument.NoteCollection = NoteCollection;
+
+		return Instrument;
+	})();
+
+	/**
+	 * @typedef {"initialized"} Instrument.EventType
+	 */
+
+	
 
 	/**
 	 * 音源となる基礎音クラス
@@ -238,7 +363,7 @@ const Instruments = (libRoot => {
 		 * @param {Instruments.Chord.ChordType} type
 		 */
 		constructor (rootNote, type) {
-			if (!(rootNote instanceof Instruments.Note)) throw new TypeError("1st argument, rootNote must be Note");
+			if (!(rootNote instanceof Instruments.Note)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("rootNote", 1, "Note");
 			
 			this.root = rootNote;
 			this.notes = [ rootNote, new Instruments.Note(rootNote.frequency + type[1]), new Instruments.Note(rootNote.frequency + type[2]) ];
@@ -247,19 +372,29 @@ const Instruments = (libRoot => {
 
 
 
-	Object.defineProperties(Instruments, {
-		TIMER: { value: TIMER, enumerable: true },
+	/**
+	 * 遅延処理に利用するタイマー
+	 * 
+	 * @type {CommandWorker}
+	 * @memberof Instruments
+	 */
+	const TIMER = new CommandWorker(`${libRoot}/TimingManager.js`);
 
+
+
+	Object.defineProperties(Instruments, {
 		Instrument: { value: Instrument },
 		Note: { value: Note },
-		Chord: { value: Chord }
+		Chord: { value: Chord },
+
+		TIMER: { value: TIMER, enumerable: true }
 	});
 	
-	Instruments.TIMER = TIMER;
-
 	Instruments.Instrument = Instrument;
 	Instruments.Note = Note;
 	Instruments.Chord = Chord;
+
+	Instruments.TIMER = TIMER;
 
 	return Instruments;
 })(

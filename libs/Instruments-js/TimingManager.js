@@ -38,9 +38,29 @@ const TimingManager = (() => {
 
 	/**
 	 * 生成された楽器のコレクション
+	 * 
+	 * @type {Array<{ notesQue: Array<Number> }>}
 	 * @memberof TimingManager
 	 */
 	const instruments = [];
+
+	/**
+	 * 簡略化関数のコレクション
+	 */
+	const Utilizes = {
+		Instruments: {
+			/**
+			 * 楽器IDの次の空き番地を返す
+			 * @return {Number} 楽器ID
+			 */
+			getNextId () {
+				const index = instruments.findIndex(instrument => !instrument);
+				return index < 0 ? instruments.length : index;
+			}
+		}
+	};
+
+
 
 	/**
 	 * 実行できるコマンド
@@ -50,11 +70,13 @@ const TimingManager = (() => {
 		/**
 		 * ブラウザ側に値を返す
 		 * 
+		 * @param {String} command 自身のコマンド名
 		 * @param {any} result 返す値
+		 * 
 		 * @return {any} 返した値
 		 */
-		return (result) {
-			self.postMessage(result);
+		return (command, result) {
+			self.postMessage({ command, result });
 			return result;
 		},
 
@@ -83,12 +105,28 @@ const TimingManager = (() => {
 
 		Instruments: {
 			/**
-			 * 次の空き楽器IDを返す
+			 * 楽器IDの次の空き番地を返す
 			 * @return {Number} 楽器ID
 			 */
-			getNextId () {
-				const index = instruments.findIndex(instrument => !instrument);
-				return Commands.return(index < 0 ? instruments.length : index);
+			getNextId: () => Commands.return("Instruments.getNextId", Utilizes.Instruments.getNextId()),
+
+			/**
+			 * 楽器を登録します
+			 * 
+			 * @param {Object} instrument 楽器
+			 * @return {Number} 新しく割り当てられた楽器ID
+			 */
+			register (instrument) {
+				const id = Utilizes.Instruments.getNextId();
+				instruments[id] = instrument;
+
+				return Commands.return("Instruments.register", id);
+			}
+		},
+
+		Notes: {
+			stop (instrumentId, noteId, duration) {
+				self.setTimeout(() => Commands.return("Notes.stop", { instrumentId, noteId, duration }), duration);
 			}
 		}
 	};
@@ -109,7 +147,7 @@ const TimingManager = (() => {
 /**
  * @typedef {Object} CommandRequest
  * @prop {String} command 実行するコマンド名
- * @prop {Array<any>} arguments コマンドの引数
+ * @prop {Array<any>} args コマンドの引数
  */
 
 
@@ -120,7 +158,7 @@ self.addEventListener("message", event => {
 
 	if (!data.command) throw new Errors.ArgumentError.ArgumentNotAcceptableError("command", null, "String");
 	if (!TimingManager.Commands.deepBrowse(data.command)) throw new ReferenceError("Provided command doesn't exist");
-	if (!data.arguments) data.arguments = [];
+	if (!data.args) data.args = [];
 
-	TimingManager.Commands.deepBrowse(data.command)(...data.arguments);
+	TimingManager.Commands.deepBrowse(data.command)(...data.args);
 });
