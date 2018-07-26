@@ -39,7 +39,7 @@ const TimingManager = (() => {
 	/**
 	 * 生成された楽器のコレクション
 	 * 
-	 * @type {Array<{ notesQue: Array<Number> }>}
+	 * @type {Array<{}>}
 	 * @memberof TimingManager
 	 */
 	const instruments = [];

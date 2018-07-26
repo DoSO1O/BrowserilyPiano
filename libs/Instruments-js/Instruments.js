@@ -123,7 +123,7 @@ const Instruments = (libRoot => {
 				/** @type {Boolean} */
 				this.initialized = false;
 				/** @type {NoteCollection} */
-				this.notesQue = new NoteCollection();
+				this.noteQues = new NoteCollection();
 
 				TIMER.requestCommand("Instrument.register").then(id => {
 					this.id = id;
@@ -185,7 +185,11 @@ const Instruments = (libRoot => {
 				)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("source", 1, ["Note", "Chord"]);
 
 				if (source instanceof Instruments.Chord) {
-					for (const note of source.notes) this.play(note);
+					const ques = [];
+					for (const note of source.notes) ques.push(this.play(note));
+
+					await Promise.all(ques);
+					return;
 				}
 
 
@@ -193,19 +197,19 @@ const Instruments = (libRoot => {
 				const sound = this.createOscillator(source.frequency);
 				sound.start(0);
 
-				(() => {
-					const nextId = this.notesQue.getNextId();
-					this.notesQue[nextId] = sound;
+				const nextId = this.noteQues.getNextId();
+				this.noteQues[nextId] = sound;
 
-					TIMER.requestCommand("Note.stop", [ this.id, nextId, source.duration ],
+				if (0 <= source.duration) {
+					await TIMER.requestCommand("Note.stop", [ this.id, nextId, source.duration ],
 						noteInfo => noteInfo.instrumentId === this.id && noteInfo.noteId === nextId
 					).then(() => {
-						this.notesQue[nextId].stop(0);
-						this.notesQue[nextId] = undefined;
+						this.noteQues[nextId].stop(0);
+						this.noteQues[nextId] = undefined;
 					});
-				})();
+				}
 
-				return;
+				return [ this.id, nextId ];
 			}
 		}
 
