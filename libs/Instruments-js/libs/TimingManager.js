@@ -48,7 +48,7 @@ const TimingManager = (() => {
 	 * 簡略化関数のコレクション
 	 */
 	const Utilizes = {
-		Instruments: {
+		Instrument: {
 			/**
 			 * 楽器IDの次の空き番地を返す
 			 * @return {Number} 楽器ID
@@ -103,12 +103,12 @@ const TimingManager = (() => {
 			return deepest;
 		},
 
-		Instruments: {
+		Instrument: {
 			/**
 			 * 楽器IDの次の空き番地を返す
 			 * @return {Number} 楽器ID
 			 */
-			getNextId: () => Commands.return("Instruments.getNextId", Utilizes.Instruments.getNextId()),
+			getNextId: () => Commands.return("Instrument.getNextId", Utilizes.Instrument.getNextId()),
 
 			/**
 			 * 楽器を登録します
@@ -116,17 +116,17 @@ const TimingManager = (() => {
 			 * @param {Object} instrument 楽器
 			 * @return {Number} 新しく割り当てられた楽器ID
 			 */
-			register (instrument) {
-				const id = Utilizes.Instruments.getNextId();
-				instruments[id] = instrument;
+			register () {
+				const id = Utilizes.Instrument.getNextId();
+				instruments[id] = {};
 
-				return Commands.return("Instruments.register", id);
+				return Commands.return("Instrument.register", id);
 			}
 		},
 
-		Notes: {
+		Note: {
 			stop (instrumentId, noteId, duration) {
-				self.setTimeout(() => Commands.return("Notes.stop", { instrumentId, noteId, duration }), duration);
+				self.setTimeout(() => Commands.return("Note.stop", { instrumentId, noteId, duration }), duration);
 			}
 		}
 	};

@@ -45,7 +45,7 @@ const Instruments = (libRoot => {
 				188: ["C", 1],
 				76: ["C#", 1],
 				190: ["D", 1],
-				59: ["D#", 1],
+				187: ["D#", 1],
 				191: ["E", 1],
 				220: ["F", 1]
 			};
@@ -66,9 +66,7 @@ const Instruments = (libRoot => {
 		constructor (stringUrl) {
 			super(stringUrl);
 
-			this.addEventListener("message", event => {
-				console.log(event);
-			});
+			this.addEventListener("message", event => console.log(event));
 		}
 
 		/**
@@ -76,10 +74,11 @@ const Instruments = (libRoot => {
 		 * 
 		 * @param {String} command 実行するコマンド名
 		 * @param {Array<any>} [args=[]] コマンドの引数
+		 * @param {Function} [checkFunc] コマンドを受け取る追加条件
 		 * 
 		 * @return {Promise<any>} 実行結果が格納されているPromiseオブジェクト
 		 */
-		requestCommand (command, args = []) {
+		requestCommand (command, args = [], checkFunc) {
 			if (!command) throw new Errors.ArgumentError.ArgumentNotDefinedError("request", 1);
 			
 			super.postMessage({ command, args });
@@ -90,7 +89,7 @@ const Instruments = (libRoot => {
 					/** @type {CommandWorker.CommandResponse} */
 					const resp = event.data;
 
-					if (resp.command === command) {
+					if (resp.command === command && checkFunc ? checkFunc(resp.result) : true) {
 						this.removeEventListener("message", detectorHook);
 						resolve(resp.result);
 					}
@@ -126,7 +125,7 @@ const Instruments = (libRoot => {
 				/** @type {NoteCollection} */
 				this.notesQue = new NoteCollection();
 
-				TIMER.requestCommand("Instruments.register", [ {} ]).then(id => {
+				TIMER.requestCommand("Instrument.register").then(id => {
 					this.id = id;
 					this.initialized = true;
 				});
@@ -170,74 +169,39 @@ const Instruments = (libRoot => {
 				const oscillator = super.createOscillator();
 				oscillator.type = this.type;
 				frequency && (oscillator.frequency.value = frequency);
-
+				
+				oscillator.connect(this.destination);
 				return oscillator;
 			}
 			
 			/**
 			 * 音源を再生します
-			 * 
-			 * @param {Number | Note | Instruments.Chord} source 鍵盤番号 | 音符 | コード
-			 * @param {Number} [duration] 再生時間[ms]
+			 * @param {Note | Instruments.Chord} source 音符 | コード
 			 */
-			async play (source, duration) {
+			async play (source) {
 				if (!(
-					typeof source === "number" ||
 					source instanceof Instruments.Note ||
 					source instanceof Instruments.Chord
-				)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("source", 1, ["Number", "Note", "Chord"]);
+				)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("source", 1, ["Note", "Chord"]);
 
 				if (source instanceof Instruments.Chord) {
-					const sounds = [];
-					for (const note of source.notes) {
-						const sound = this.createOscillator(note.frequency);
-						
-						sound.connect(this.destination);
-						sound.start(0);
-
-						sounds.push(
-							new Promise(resolve => {
-								if (!duration) resolve();
-
-								let counter = 0;
-								const detector = setInterval(() => {
-									counter++;
-
-									if (counter >= duration) {
-										sound.stop(0);
-
-										clearInterval(detector);
-										resolve();
-									}
-								});
-							})
-						);
-					}
-
-					await Promise.all(sounds);
-					return;
+					for (const note of source.notes) this.play(note);
 				}
 
 
 			
-				const sound = this.createOscillator(
-					typeof source === "number" ? Instruments.Note.createFromIndex(source).frequency :
-					source instanceof Instruments.Note ? source.frequency :
-					null
-				);
-
-				sound.connect(this.destination);
+				const sound = this.createOscillator(source.frequency);
 				sound.start(0);
 
 				(() => {
 					const nextId = this.notesQue.getNextId();
 					this.notesQue[nextId] = sound;
 
-					TIMER.requestCommand("Notes.stop", [ this.id, nextId, duration ]).then(noteInfo => {
-						if (noteInfo.instrumentId === this.id && noteInfo.noteId === nextId) {
-							this.notesQue[nextId].stop(0);
-							this.notesQue[nextId] = undefined;
-						}
+					TIMER.requestCommand("Note.stop", [ this.id, nextId, source.duration ],
+						noteInfo => noteInfo.instrumentId === this.id && noteInfo.noteId === nextId
+					).then(() => {
+						this.notesQue[nextId].stop(0);
+						this.notesQue[nextId] = undefined;
 					});
 				})();
 
@@ -272,12 +236,6 @@ const Instruments = (libRoot => {
 
 
 
-		Object.defineProperties(Instrument, {
-			NoteCollection: { value: NoteCollection }
-		});
-
-		Instrument.NoteCollection = NoteCollection;
-
 		return Instrument;
 	})();
 
@@ -301,10 +259,14 @@ const Instruments = (libRoot => {
 		 * 鍵盤番号から基礎音を生成します
 		 * 
 		 * @param {Number} index 鍵盤番号
+		 * @param {Number} [duration] 再生時間
+		 * 
 		 * @return {Note} 生成された基礎音
 		 */
-		static createFromIndex (index) {
-			return new Note(Note.NoteType[index % 12], Math.floor(index / 12) + 1);
+		static createByIndex (index, duration) {
+			if (typeof index !== "number") throw new Errors.ArgumentError.ArgumentNotAcceptableError("index", 1, "Number");
+
+			return new Note(Note.NoteType[index % 12], Math.floor(index / 12) + 1, duration);
 		}
 
 
@@ -312,12 +274,14 @@ const Instruments = (libRoot => {
 		/**
 		 * 基礎音を生成します
 		 * 
-		 * @param {String} scale スケール
-		 * @param {Number} octave オクターブ数
+		 * @param {String} [scale="C"] スケール
+		 * @param {Number} [octave=3] オクターブ数
+		 * @param {Number} [duration=-1] 再生時間[ms] (-1 = 自動停止されません)
 		 */
-		constructor (scale = "C", octave = 3) {
+		constructor (scale = "C", octave = 3, duration = -1) {
 			this.scale = scale;
 			this.octave = octave;
+			this.duration = duration;
 		}
 
 		/**
@@ -364,9 +328,13 @@ const Instruments = (libRoot => {
 		 */
 		constructor (rootNote, type) {
 			if (!(rootNote instanceof Instruments.Note)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("rootNote", 1, "Note");
+			if (!Array.isArray(type)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("type", 2, "Array<Number>");
 			
 			this.root = rootNote;
-			this.notes = [ rootNote, new Instruments.Note(rootNote.frequency + type[1]), new Instruments.Note(rootNote.frequency + type[2]) ];
+			
+			/** @type {Array<Note>} */
+			this.notes = [];
+			for (const index of type) this.notes.push(Instruments.Note.createByIndex(rootNote.noteIndex + index, rootNote.duration));
 		}
 	}
 
@@ -378,7 +346,7 @@ const Instruments = (libRoot => {
 	 * @type {CommandWorker}
 	 * @memberof Instruments
 	 */
-	const TIMER = new CommandWorker(`${libRoot}/TimingManager.js`);
+	const TIMER = new CommandWorker(`${libRoot}/libs/TimingManager.js`);
 
 
 
