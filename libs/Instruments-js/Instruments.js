@@ -39,15 +39,15 @@ const Instruments = (libRoot => {
 				71: ["F#", 0],
 				66: ["G", 0],
 				72: ["G#", 0],
-				78: ["A", 0],
-				74: ["A#", 0],
-				77: ["B", 0],
+				78: ["A", 1],
+				74: ["A#", 1],
+				77: ["B", 1],
 				188: ["C", 1],
 				76: ["C#", 1],
 				190: ["D", 1],
 				187: ["D#", 1],
 				191: ["E", 1],
-				220: ["F", 1]
+				226: ["F", 1]
 			};
 		}
 	}
@@ -63,11 +63,7 @@ const Instruments = (libRoot => {
 		 * CommandWorkerを生成します
 		 * @param {String} stringUrl Workerとして起動するスクリプト
 		 */
-		constructor (stringUrl) {
-			super(stringUrl);
-
-			this.addEventListener("message", event => console.log(event));
-		}
+		constructor (stringUrl) { super(stringUrl) }
 
 		/**
 		 * コマンドの実行を要求します
@@ -143,14 +139,14 @@ const Instruments = (libRoot => {
 			 * @param {Instrument.EventType} eventName イベント名
 			 * @param {Function} [callback] コールバック関数
 			 * 
-			 * @return {Promise<any>}
+			 * @return {Promise<Instrument>}
 			 */
 			on (eventName, callback) {
 				switch (eventName) {
 					default:
 						throw new Errors.ArgumentError.ArgumentNotAcceptableError("eventName", 1);
 
-					case "initiaized":
+					case "initialized":
 						return new Promise(resolve => {
 							const detector = setInterval(() => {
 								if (this.initialized) {
@@ -176,7 +172,9 @@ const Instruments = (libRoot => {
 			
 			/**
 			 * 音源を再生します
+			 * 
 			 * @param {Note | Instruments.Chord} source 音符 | コード
+			 * @return {Promise<[ Number, Number ]>}
 			 */
 			async play (source) {
 				if (!(
@@ -188,8 +186,7 @@ const Instruments = (libRoot => {
 					const ques = [];
 					for (const note of source.notes) ques.push(this.play(note));
 
-					await Promise.all(ques);
-					return;
+					return await Promise.all(ques);
 				}
 
 
@@ -197,21 +194,31 @@ const Instruments = (libRoot => {
 				const sound = this.createOscillator(source.frequency);
 				sound.start(0);
 
-				const nextId = this.noteQues.getNextId();
-				this.noteQues[nextId] = sound;
+				const noteId = this.noteQues.getNextId();
+				this.noteQues[noteId] = sound;
 
 				if (0 <= source.duration) {
-					await TIMER.requestCommand("Note.stop", [ this.id, nextId, source.duration ],
-						noteInfo => noteInfo.instrumentId === this.id && noteInfo.noteId === nextId
-					).then(() => {
-						this.noteQues[nextId].stop(0);
-						this.noteQues[nextId] = undefined;
-					});
+					await TIMER.requestCommand("Note.stop", [ this.id, noteId, source.duration ],
+						noteInfo => noteInfo.instrumentId === this.id && noteInfo.noteId === noteId
+					).then(() => this.stop(noteId));
 				}
 
-				return [ this.id, nextId ];
+				return [ this.id, noteId ];
+			}
+
+			/**
+			 * 指定されたノーツを停止します
+			 * @param {Number} noteId ノーツID
+			 */
+			stop (noteId) {
+				this.noteQues[noteId].stop(0);
+				this.noteQues[noteId] = undefined;
 			}
 		}
+
+		/**
+		 * @typedef {"initialized"} Instrument.EventType
+		 */
 
 
 
@@ -229,8 +236,8 @@ const Instruments = (libRoot => {
 			}
 
 			/**
-			 * ノートIDの次の空き番地を返します
-			 * @return {Number} ノートID
+			 * ノーツIDの次の空き番地を返します
+			 * @return {Number} ノーツID
 			 */
 			getNextId () {
 				const index = this.findIndex(note => !note);
@@ -242,10 +249,6 @@ const Instruments = (libRoot => {
 
 		return Instrument;
 	})();
-
-	/**
-	 * @typedef {"initialized"} Instrument.EventType
-	 */
 
 	
 
@@ -300,7 +303,10 @@ const Instruments = (libRoot => {
 		 */
 		get frequency () { return 27.500 * Math.pow(2, this.noteIndex / 12) }
 
-		/** @return {String} */
+		/**
+		 * 文字列化して返します
+		 * @return {String}
+		 */
 		toString () { return `${this.scale}${this.octave}` }
 	}
 

@@ -2,14 +2,36 @@
 
 
 
-const currentQues = [];
-const piano = new Instruments.Instrument();
+const ques = {};
 
-for (const code in Instruments.defaultMap) {
+const piano = new Instruments.Instrument();
+piano.on("initialized").then(piano => {
 	window.addEventListener("keydown", event => {
-		if (event.keyCode == code) {
-			const currentKey = Instruments.defaultMap[code];
-			piano.play(new Instruments.Note(currentKey[0], 5 + currentKey[1]));
+		const noteInfo = Instruments.defaultMap[event.keyCode];
+
+		if (!noteInfo) return;
+		const note = new Instruments.Note(noteInfo[0], 5 + noteInfo[1]);
+
+		if (!(note.toString() in ques)) {
+			piano.play(note).then(uuids => ques[note.toString()] = uuids);
 		}
 	});
-}
+
+	window.addEventListener("keyup", event => {
+		const noteInfo = Instruments.defaultMap[event.keyCode];
+
+		if (!noteInfo) return;
+		const note = new Instruments.Note(noteInfo[0], 5 + noteInfo[1]);
+
+		if (note.toString() in ques) {
+			const uuids = ques[note.toString()];
+
+			Instruments.TIMER.requestCommand("Note.stop", [ ...ques[note.toString()], 0 ],
+				noteInfo => noteInfo.instrumentId === uuids[0] && noteInfo.noteId === uuids[1]
+			).then(noteInfo => {
+				piano.stop(noteInfo.noteId);
+				delete ques[note.toString()];
+			});
+		}
+	});
+});

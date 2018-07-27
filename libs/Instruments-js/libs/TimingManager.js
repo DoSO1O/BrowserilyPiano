@@ -125,8 +125,8 @@ const TimingManager = (() => {
 		},
 
 		Note: {
-			stop (instrumentId, noteId, duration) {
-				self.setTimeout(() => Commands.return("Note.stop", { instrumentId, noteId, duration }), duration);
+			stop (instrumentId, noteId, after) {
+				self.setTimeout(() => Commands.return("Note.stop", { instrumentId, noteId, after }), after);
 			}
 		}
 	};
