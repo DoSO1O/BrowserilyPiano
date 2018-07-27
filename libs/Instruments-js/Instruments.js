@@ -1,13 +1,11 @@
 /*/
- *  ______   ______   ______   ______   ______   ______   ______   ______   ______   ______   ______ 
- * |     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|     _|_|      |
- * | I  (_(_  n  (_(_  s  (_(_  t  (_(_  r  (_(_  u  (_(_  m  (_(_  e  (_(_  n_ (_(_  t_ (_(_  s_   |
- * |______| |______| |______| |______| |______| |______| |______| |______| |_( )__| |_( )__| |_( )__|
- *                                                                            _        _        _    
- *                                                                          _( )__   _( )__   _( )__ 
- *                                                                         |     _|_|     _|_|      |
- *                                                                         | .  (_(_  j  (_(_  s    |
- *                                                                         |______| |______| |______|
+ *  ______ ______ ______ ______ ______ ______ ______ ______ ______ ______ ______ 
+ * |     _|     _|     _|     _|     _|     _|     _|     _|     _|     _|      |
+ * | I  (_  n  (_  s  (_  t  (_  r  (_  u  (_  m  (_  e  (_  n_ (_  t_ (_  s_   |
+ * |______|______|______|______|______|______|______|______|_( )__|_( )__|_( )__|
+ *                                                         |     _|     _|      |
+ *                                                         | .  (_  j  (_  s    |
+ *                                                         |______|______|______|
 /*/
 
 
@@ -25,7 +23,8 @@
 const Instruments = (libRoot => {
 	class Instruments {
 		/**
-		 * キーマッピングのデフォルト設定
+		 * キーマッピングのデフォルト設定( [ スケール, 相対オクターブ数 ] )
+		 * 
 		 * @return {Object<number, Array<String | Number>>}
 		 */
 		static get defaultMap () {
@@ -101,6 +100,104 @@ const Instruments = (libRoot => {
 	 * @prop {String} command 実行されたコマンド名
 	 * @prop {any} result 実行結果
 	 */
+
+
+
+	/**
+	 * 基礎音となるノーツ
+	 * 
+	 * @memberof Instruments
+	 * @author Genbu Hase
+	 */
+	class Note {
+		/** 基礎音の種類 */
+		static get NoteType () { return ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"] }
+
+		/**
+		 * 鍵盤番号から基礎音を生成します
+		 * 
+		 * @param {Number} index 鍵盤番号
+		 * @param {Number} [duration] 再生時間
+		 * 
+		 * @return {Note} 生成された基礎音
+		 */
+		static createByIndex (index, duration) {
+			if (typeof index !== "number") throw new Errors.ArgumentError.ArgumentNotAcceptableError("index", 1, "Number");
+
+			return new Note(Note.NoteType[index % 12], Math.floor(index / 12) + 1, duration);
+		}
+
+
+
+		/**
+		 * 基礎音を生成します
+		 * 
+		 * @param {String} [scale="C"] スケール
+		 * @param {Number} [octave=3] オクターブ数
+		 * @param {Number} [duration=-1] 再生時間[ms] (-1 = 自動停止されません)
+		 */
+		constructor (scale = "C", octave = 3, duration = -1) {
+			this.scale = scale;
+			this.octave = octave;
+			this.duration = duration;
+		}
+
+		/**
+		 * 鍵盤番号
+		 * @return {Number}
+		 */
+		get noteIndex () { return Note.NoteType.indexOf(this.scale) + 12 * (this.octave - 1) }
+
+		/**
+		 * 音源の周波数
+		 * @return {Number}
+		 */
+		get frequency () { return 27.500 * Math.pow(2, this.noteIndex / 12) }
+
+		/**
+		 * 文字列化して返します
+		 * @return {String}
+		 */
+		toString () { return `${this.scale}${this.octave}` }
+	}
+
+	/**
+	 * 和音(コード)
+	 * 
+	 * @memberof Instruments
+	 * @author Genbu Hase
+	 */
+	class Chord {
+		/** コードの種類 */
+		static get ChordType () {
+			return {
+				MAJOR: [0, 4, 7],
+				MINOR: [0, 3, 7],
+				SUS2: [0, 2, 7],
+				SUS4: [0, 5, 7],
+				AUG: [0, 4, 8]
+			};
+		}
+
+
+
+		/**
+		 * 基礎音と対応したコードを生成します
+		 * 
+		 * @param {Instruments.Note} rootNote
+		 * @param {Instruments.Chord.ChordType} type
+		 */
+		constructor (rootNote, type) {
+			if (!(rootNote instanceof Instruments.Note)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("rootNote", 1, "Note");
+			if (!Array.isArray(type)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("type", 2, "Array<Number>");
+			
+			this.root = rootNote;
+			
+			/** @type {Array<Note>} */
+			this.notes = [];
+			for (const index of type) this.notes.push(Instruments.Note.createByIndex(rootNote.noteIndex + index, rootNote.duration));
+		}
+	}
 
 	
 	
@@ -222,10 +319,11 @@ const Instruments = (libRoot => {
 
 
 
-		/**
-		 * 実行中のNoteを格納するコレクション
-		 * @memberof Instrument
-		 */
+		//class NoteHolder
+
+
+
+		/** 実行中のNoteを格納するコレクション */
 		class NoteCollection extends Array {
 			/**
 			 * NoteCollectionを生成します
@@ -250,108 +348,10 @@ const Instruments = (libRoot => {
 		return Instrument;
 	})();
 
-	
-
-	/**
-	 * 音源となる基礎音クラス
-	 * 
-	 * @memberof Instruments
-	 * @author Genbu Hase
-	 */
-	class Note {
-		/** 基礎音の種類 */
-		static get NoteType () { return ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"] }
-
-		/**
-		 * 鍵盤番号から基礎音を生成します
-		 * 
-		 * @param {Number} index 鍵盤番号
-		 * @param {Number} [duration] 再生時間
-		 * 
-		 * @return {Note} 生成された基礎音
-		 */
-		static createByIndex (index, duration) {
-			if (typeof index !== "number") throw new Errors.ArgumentError.ArgumentNotAcceptableError("index", 1, "Number");
-
-			return new Note(Note.NoteType[index % 12], Math.floor(index / 12) + 1, duration);
-		}
-
-
-
-		/**
-		 * 基礎音を生成します
-		 * 
-		 * @param {String} [scale="C"] スケール
-		 * @param {Number} [octave=3] オクターブ数
-		 * @param {Number} [duration=-1] 再生時間[ms] (-1 = 自動停止されません)
-		 */
-		constructor (scale = "C", octave = 3, duration = -1) {
-			this.scale = scale;
-			this.octave = octave;
-			this.duration = duration;
-		}
-
-		/**
-		 * 鍵盤番号
-		 * @return {Number}
-		 */
-		get noteIndex () { return Note.NoteType.indexOf(this.scale) + 12 * (this.octave - 1) }
-
-		/**
-		 * 音源の周波数
-		 * @return {Number}
-		 */
-		get frequency () { return 27.500 * Math.pow(2, this.noteIndex / 12) }
-
-		/**
-		 * 文字列化して返します
-		 * @return {String}
-		 */
-		toString () { return `${this.scale}${this.octave}` }
-	}
-
-	/**
-	 * 和音(コード)クラス
-	 * 
-	 * @memberof Instruments
-	 * @author Genbu Hase
-	 */
-	class Chord {
-		/** コードの種類 */
-		static get ChordType () {
-			return {
-				MAJOR: [0, 4, 7],
-				MINOR: [0, 3, 7],
-				SUS2: [0, 2, 7],
-				SUS4: [0, 5, 7],
-				AUG: [0, 4, 8]
-			};
-		}
-
-
-
-		/**
-		 * 基礎音と対応したコードを生成します
-		 * 
-		 * @param {Instruments.Note} rootNote
-		 * @param {Instruments.Chord.ChordType} type
-		 */
-		constructor (rootNote, type) {
-			if (!(rootNote instanceof Instruments.Note)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("rootNote", 1, "Note");
-			if (!Array.isArray(type)) throw new Errors.ArgumentError.ArgumentNotAcceptableError("type", 2, "Array<Number>");
-			
-			this.root = rootNote;
-			
-			/** @type {Array<Note>} */
-			this.notes = [];
-			for (const index of type) this.notes.push(Instruments.Note.createByIndex(rootNote.noteIndex + index, rootNote.duration));
-		}
-	}
-
 
 
 	/**
-	 * 遅延処理に利用するタイマー
+	 * 遅延処理に利用するコマンドワーカー
 	 * 
 	 * @type {CommandWorker}
 	 * @memberof Instruments
